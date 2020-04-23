@@ -13,7 +13,8 @@ export type ScrollToAlign = 'auto' | 'smart' | 'center' | 'start' | 'end';
 type itemSize = number | ((index: number) => number);
 
 type RenderComponentProps<T> = {|
-  columnIndex: number,
+  columnStartIndex: number,
+  columnStopIndex: number,
   data: T,
   isScrolling?: boolean,
   rowIndex: number,
@@ -76,7 +77,6 @@ export type Props<T> = {|
   innerTagName?: string, // deprecated
   itemData: T,
   itemKey?: (params: {|
-    columnIndex: number,
     data: T,
     rowIndex: number,
   |}) => any,
@@ -142,8 +142,7 @@ type ValidateProps = (props: Props<any>) => void;
 
 const IS_SCROLLING_DEBOUNCE_INTERVAL = 150;
 
-const defaultItemKey = ({ columnIndex, data, rowIndex }) =>
-  `${rowIndex}:${columnIndex}`;
+const defaultItemKey = ({ data, rowIndex }) => `${rowIndex}`;
 
 // In DEV mode, this Set helps us only log a warning once per component instance.
 // This avoids spamming the console every time a render happens.
@@ -426,22 +425,21 @@ export default function createGridComponent({
           rowIndex <= rowStopIndex;
           rowIndex++
         ) {
-          for (
-            let columnIndex = columnStartIndex;
-            columnIndex <= columnStopIndex;
-            columnIndex++
-          ) {
-            items.push(
-              createElement(children, {
-                columnIndex,
-                data: itemData,
-                isScrolling: useIsScrolling ? isScrolling : undefined,
-                key: itemKey({ columnIndex, data: itemData, rowIndex }),
+          items.push(
+            createElement(children, {
+              columnStartIndex,
+              columnStopIndex,
+              data: itemData,
+              isScrolling: useIsScrolling ? isScrolling : undefined,
+              key: itemKey({ data: itemData, rowIndex }),
+              rowIndex,
+              style: this._getItemStyle(
                 rowIndex,
-                style: this._getItemStyle(rowIndex, columnIndex),
-              })
-            );
-          }
+                columnStartIndex,
+                columnStopIndex
+              ),
+            })
+          );
         }
       }
 
@@ -594,8 +592,16 @@ export default function createGridComponent({
     // So that pure component sCU will prevent re-renders.
     // We maintain this cache, and pass a style prop rather than index,
     // So that List can clear cached styles and force item re-render if necessary.
-    _getItemStyle: (rowIndex: number, columnIndex: number) => Object;
-    _getItemStyle = (rowIndex: number, columnIndex: number): Object => {
+    _getItemStyle: (
+      rowIndex: number,
+      columnStartIndex: number,
+      columnStopIndex: number
+    ) => Object;
+    _getItemStyle = (
+      rowIndex: number,
+      columnStartIndex: number,
+      columnStopIndex: number
+    ): Object => {
       const { columnWidth, direction, rowHeight } = this.props;
 
       const itemStyleCache = this._getItemStyleCache(
@@ -604,7 +610,7 @@ export default function createGridComponent({
         shouldResetStyleCacheOnItemSizeChange && rowHeight
       );
 
-      const key = `${rowIndex}:${columnIndex}`;
+      const key = `${rowIndex}:${columnStartIndex}:${columnStopIndex}`;
 
       let style;
       if (itemStyleCache.hasOwnProperty(key)) {
@@ -612,9 +618,14 @@ export default function createGridComponent({
       } else {
         const offset = getColumnOffset(
           this.props,
-          columnIndex,
+          columnStartIndex,
           this._instanceProps
         );
+        let width = 0;
+        for (let i = columnStartIndex; i < columnStopIndex; i++) {
+          width += getColumnWidth(this.props, i, this._instanceProps);
+        }
+
         const isRtl = direction === 'rtl';
         itemStyleCache[key] = style = {
           position: 'absolute',
@@ -622,7 +633,7 @@ export default function createGridComponent({
           right: isRtl ? offset : undefined,
           top: getRowOffset(this.props, rowIndex, this._instanceProps),
           height: getRowHeight(this.props, rowIndex, this._instanceProps),
-          width: getColumnWidth(this.props, columnIndex, this._instanceProps),
+          width,
         };
       }
 
